@@ -54,6 +54,7 @@ fn approval_metadata(
         connector_description: connector_description.map(str::to_string),
         tool_title: tool_title.map(str::to_string),
         tool_description: tool_description.map(str::to_string),
+        output_schema: None,
         codex_apps_meta: None,
     }
 }
@@ -509,6 +510,111 @@ fn sanitize_mcp_tool_result_for_model_preserves_image_when_supported() {
     assert_eq!(got, original);
 }
 
+#[test]
+fn unwrap_fastmcp_primitive_result_unwraps_primitive_result_wrapper() {
+    let metadata = McpToolApprovalMetadata {
+        annotations: None,
+        connector_id: None,
+        connector_name: None,
+        connector_description: None,
+        tool_title: None,
+        tool_description: None,
+        output_schema: Some(serde_json::json!({
+            "x-fastmcp-wrap-result": true
+        })),
+        codex_apps_meta: None,
+    };
+    let result = Ok(CallToolResult {
+        content: vec![],
+        structured_content: Some(serde_json::json!({
+            "result": 42
+        })),
+        is_error: Some(false),
+        meta: None,
+    });
+
+    let got = unwrap_fastmcp_primitive_result(result, Some(&metadata)).expect("unwrap succeeds");
+
+    assert_eq!(got.structured_content, Some(serde_json::json!(42)));
+}
+
+#[test]
+fn unwrap_fastmcp_primitive_result_preserves_non_primitive_result_wrapper() {
+    let metadata = McpToolApprovalMetadata {
+        annotations: None,
+        connector_id: None,
+        connector_name: None,
+        connector_description: None,
+        tool_title: None,
+        tool_description: None,
+        output_schema: Some(serde_json::json!({
+            "x-fastmcp-wrap-result": true
+        })),
+        codex_apps_meta: None,
+    };
+    let original = CallToolResult {
+        content: vec![],
+        structured_content: Some(serde_json::json!({
+            "result": {
+                "nested": true
+            }
+        })),
+        is_error: Some(false),
+        meta: None,
+    };
+
+    let got = unwrap_fastmcp_primitive_result(Ok(original.clone()), Some(&metadata))
+        .expect("passthrough succeeds");
+
+    assert_eq!(got, original);
+}
+
+#[test]
+fn unwrap_fastmcp_primitive_result_preserves_other_single_field_objects() {
+    let metadata = McpToolApprovalMetadata {
+        annotations: None,
+        connector_id: None,
+        connector_name: None,
+        connector_description: None,
+        tool_title: None,
+        tool_description: None,
+        output_schema: Some(serde_json::json!({
+            "x-fastmcp-wrap-result": true
+        })),
+        codex_apps_meta: None,
+    };
+    let original = CallToolResult {
+        content: vec![],
+        structured_content: Some(serde_json::json!({
+            "value": 42
+        })),
+        is_error: Some(false),
+        meta: None,
+    };
+
+    let got = unwrap_fastmcp_primitive_result(Ok(original.clone()), Some(&metadata))
+        .expect("passthrough succeeds");
+
+    assert_eq!(got, original);
+}
+
+#[test]
+fn unwrap_fastmcp_primitive_result_preserves_wrapper_without_opt_in() {
+    let original = CallToolResult {
+        content: vec![],
+        structured_content: Some(serde_json::json!({
+            "result": 42
+        })),
+        is_error: Some(false),
+        meta: None,
+    };
+
+    let got =
+        unwrap_fastmcp_primitive_result(Ok(original.clone()), None).expect("passthrough succeeds");
+
+    assert_eq!(got, original);
+}
+
 #[tokio::test]
 async fn mcp_tool_call_request_meta_includes_turn_metadata_for_custom_server() {
     let (_, turn_context) = make_session_and_context().await;
@@ -549,6 +655,7 @@ async fn codex_apps_tool_call_request_meta_includes_turn_metadata_and_codex_apps
         connector_description: Some("Manage events".to_string()),
         tool_title: Some("Create Event".to_string()),
         tool_description: Some("Create a calendar event.".to_string()),
+        output_schema: None,
         codex_apps_meta: Some(
             serde_json::json!({
                 "resource_uri": "connector://calendar/tools/calendar_create_event",

@@ -205,7 +205,7 @@ pub(crate) async fn handle_mcp_tool_call(
                         .model_info
                         .input_modalities
                         .contains(&InputModality::Image),
-                    result,
+                    unwrap_fastmcp_primitive_result(result, metadata.as_ref()),
                 );
                 if let Err(error) = &result {
                     tracing::warn!("MCP tool call error: {error:?}");
@@ -318,7 +318,7 @@ pub(crate) async fn handle_mcp_tool_call(
             .model_info
             .input_modalities
             .contains(&InputModality::Image),
-        result,
+        unwrap_fastmcp_primitive_result(result, metadata.as_ref()),
     );
     if let Err(error) = &result {
         tracing::warn!("MCP tool call error: {error:?}");
@@ -500,6 +500,39 @@ fn sanitize_mcp_tool_result_for_model(
     })
 }
 
+fn unwrap_fastmcp_primitive_result(
+    result: Result<CallToolResult, String>,
+    metadata: Option<&McpToolApprovalMetadata>,
+) -> Result<CallToolResult, String> {
+    if !metadata
+        .and_then(|metadata| metadata.output_schema.as_ref())
+        .is_some_and(output_schema_requests_fastmcp_unwrap)
+    {
+        return result;
+    }
+
+    result.map(|call_tool_result| CallToolResult {
+        structured_content: unwrap_fastmcp_wrapped_value(call_tool_result.structured_content),
+        ..call_tool_result
+    })
+}
+
+fn output_schema_requests_fastmcp_unwrap(output_schema: &serde_json::Value) -> bool {
+    output_schema
+        .get("x-fastmcp-wrap-result")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+}
+
+fn unwrap_fastmcp_wrapped_value(
+    structured_content: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    match structured_content {
+        Some(serde_json::Value::Object(map)) if map.len() == 1 => map.get("result").cloned(),
+        other => other,
+    }
+}
+
 async fn notify_mcp_tool_call_event(sess: &Session, turn_context: &TurnContext, event: EventMsg) {
     sess.send_event(turn_context, event).await;
 }
@@ -565,6 +598,7 @@ pub(crate) struct McpToolApprovalMetadata {
     connector_description: Option<String>,
     tool_title: Option<String>,
     tool_description: Option<String>,
+    output_schema: Option<serde_json::Value>,
     codex_apps_meta: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -1020,6 +1054,11 @@ pub(crate) async fn lookup_mcp_tool_metadata(
         connector_description,
         tool_title: tool_info.tool.title,
         tool_description: tool_info.tool.description.map(std::borrow::Cow::into_owned),
+        output_schema: tool_info
+            .tool
+            .output_schema
+            .as_ref()
+            .map(|schema| serde_json::Value::Object(schema.as_ref().clone())),
         codex_apps_meta: tool_info
             .tool
             .meta

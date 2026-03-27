@@ -94,6 +94,10 @@ fn mcp_tool_to_openai_tool_preserves_top_level_output_schema() {
 
     let mut output_schema = rmcp::model::JsonObject::new();
     output_schema.insert(
+        "x-fastmcp-wrap-result".to_string(),
+        serde_json::json!(false),
+    );
+    output_schema.insert(
         "properties".to_string(),
         serde_json::json!({
             "result": {
@@ -184,6 +188,64 @@ fn mcp_tool_to_openai_tool_preserves_output_schema_without_inferred_type() {
                 },
                 "structuredContent": {
                     "enum": ["ok", "error"]
+                },
+                "isError": {
+                    "type": "boolean"
+                },
+                "_meta": {}
+            },
+            "required": ["content"],
+            "additionalProperties": false
+        }))
+    );
+}
+
+#[test]
+fn mcp_tool_to_openai_tool_unwraps_wrapper_shaped_output_schema() {
+    let mut input_schema = rmcp::model::JsonObject::new();
+    input_schema.insert("type".to_string(), serde_json::json!("object"));
+
+    let mut properties = rmcp::model::JsonObject::new();
+    properties.insert(
+        "result".to_string(),
+        serde_json::json!({ "type": "boolean" }),
+    );
+
+    let mut output_schema = rmcp::model::JsonObject::new();
+    output_schema.insert("type".to_string(), serde_json::json!("object"));
+    output_schema.insert("x-fastmcp-wrap-result".to_string(), serde_json::json!(true));
+    output_schema.insert(
+        "properties".to_string(),
+        serde_json::Value::Object(properties),
+    );
+    output_schema.insert("required".to_string(), serde_json::json!(["result"]));
+
+    let tool = rmcp::model::Tool {
+        name: "wrapped_bool".to_string().into(),
+        title: None,
+        description: Some("Wrapped primitive output".to_string().into()),
+        input_schema: std::sync::Arc::new(input_schema),
+        output_schema: Some(std::sync::Arc::new(output_schema)),
+        annotations: None,
+        execution: None,
+        icons: None,
+        meta: None,
+    };
+
+    let openai_tool = mcp_tool_to_openai_tool("mcp__server__wrapped_bool".to_string(), tool)
+        .expect("convert tool");
+
+    assert_eq!(
+        openai_tool.output_schema,
+        Some(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "array",
+                    "items": {}
+                },
+                "structuredContent": {
+                    "type": "boolean"
                 },
                 "isError": {
                     "type": "boolean"

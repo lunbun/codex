@@ -2431,7 +2431,7 @@ fn mcp_tool_to_openai_tool_parts(
 
     let input_schema = parse_tool_input_schema(&serialized_input_schema)?;
     let structured_content_schema = output_schema
-        .map(|output_schema| serde_json::Value::Object(output_schema.as_ref().clone()))
+        .map(|output_schema| normalize_mcp_output_schema(output_schema.as_ref().clone()))
         .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new()));
     let output_schema = Some(mcp_call_tool_result_output_schema(
         structured_content_schema,
@@ -2458,6 +2458,39 @@ fn mcp_call_tool_result_output_schema(structured_content_schema: JsonValue) -> J
         "required": ["content"],
         "additionalProperties": false
     })
+}
+
+fn normalize_mcp_output_schema(output_schema: serde_json::Map<String, JsonValue>) -> JsonValue {
+    if let Some(unwrapped) = unwrap_fastmcp_result_schema(&output_schema) {
+        return unwrapped;
+    }
+
+    JsonValue::Object(output_schema)
+}
+
+fn unwrap_fastmcp_result_schema(
+    output_schema: &serde_json::Map<String, JsonValue>,
+) -> Option<JsonValue> {
+    if output_schema
+        .get("x-fastmcp-wrap-result")
+        .and_then(serde_json::Value::as_bool)
+        != Some(true)
+    {
+        return None;
+    }
+
+    let properties = output_schema.get("properties")?.as_object()?;
+    if properties.len() != 1 {
+        return None;
+    }
+
+    let result_schema = properties.get("result")?.clone();
+    let required = output_schema.get("required")?.as_array()?;
+    if required.len() != 1 || required.first()?.as_str() != Some("result") {
+        return None;
+    }
+
+    Some(result_schema)
 }
 
 /// Builds the tool registry builder while collecting tool specs for later serialization.

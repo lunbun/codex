@@ -1297,7 +1297,12 @@ impl CallToolResult {
         if let Some(structured_content) = &self.structured_content
             && !structured_content.is_null()
         {
-            match serde_json::to_string(structured_content) {
+            let body_text = match structured_content {
+                serde_json::Value::String(text) => Ok(text.clone()),
+                _ => serde_json::to_string(structured_content),
+            };
+
+            match body_text {
                 Ok(serialized_structured_content) => {
                     return FunctionCallOutputPayload {
                         body: FunctionCallOutputBody::Text(serialized_structured_content),

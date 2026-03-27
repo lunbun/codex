@@ -2126,6 +2126,24 @@ fn success_flag_true_with_no_error_and_content_used() {
     assert_eq!(expected, got);
 }
 
+#[test]
+fn structured_string_content_is_not_json_escaped() {
+    let ctr = McpCallToolResult {
+        content: vec![text_block("ignored")],
+        is_error: None,
+        structured_content: Some(serde_json::Value::String("hi\naa".to_string())),
+        meta: None,
+    };
+
+    let got = ctr.into_function_call_output_payload();
+    let expected = FunctionCallOutputPayload {
+        body: FunctionCallOutputBody::Text("hi\naa".to_string()),
+        success: Some(true),
+    };
+
+    assert_eq!(expected, got);
+}
+
 async fn wait_for_thread_rolled_back(
     rx: &async_channel::Receiver<Event>,
 ) -> crate::protocol::ThreadRolledBackEvent {

@@ -30,6 +30,7 @@ cargo install just
 cargo install --locked cargo-nextest
 
 # Build Codex.
+
 cargo build
 
 # Launch the TUI with a sample prompt.
